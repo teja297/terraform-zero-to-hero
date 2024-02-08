@@ -1,155 +1,151 @@
 provider "aws" {
-  region = "us-east-1"
+  region = "us-east-2"  # Replace with your desired region
 }
 
-resource "aws_vpc" "my_vpc" {
-  cidr_block = "10.0.0.0/16"
+resource "aws_vpc" "example" {
+  cidr_block = "10.0.0.0/16"  # Replace with your desired CIDR block for the VPC
+  enable_dns_support = true
+  enable_dns_hostnames = true
   tags = {
-    Name = "MyVPC"
+    Name = "example-vpc"
+  }
+
+  
+}
+# Create private subnet
+resource "aws_subnet" "private" {
+  vpc_id            = aws_vpc.example.id
+  cidr_block        = "10.0.0.0/17"  # Replace with your desired CIDR block for the public subnet
+  availability_zone = "us-east-2a"   # Replace with your desired availability zone
+
+  tags = {
+    Name = "private-subnet"
   }
 }
 
-resource "aws_internet_gateway" "my_igw" {
-  vpc_id = aws_vpc.my_vpc.id
+# Create public subnet
+resource "aws_subnet" "public" {
+  vpc_id            = aws_vpc.example.id
+  cidr_block        = "10.0.128.0/17"  # Replace with your desired CIDR block for the public subnet
+  availability_zone = "us-east-2b"   # Replace with your desired availability zone
+  map_public_ip_on_launch = true  # This enables automatic public IP assignment
+
+
   tags = {
-    Name = "MyIGW"
+    Name = "public-subnet"
   }
 }
 
-resource "aws_subnet" "public_subnet" {
-  vpc_id            = aws_vpc.my_vpc.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-east-1a"
+
+
+# Create internet gateway
+resource "aws_internet_gateway" "example" {
+  vpc_id = aws_vpc.example.id
+
   tags = {
-    Name = "PublicSubnet"
+    Name = "example-igw"
   }
 }
 
-resource "aws_subnet" "private_subnet" {
-  vpc_id            = aws_vpc.my_vpc.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-east-1b"
+# Create elastic IP for NAT gateway
+resource "aws_eip" "nat" {
+
+}
+
+# Create NAT gateway
+resource "aws_nat_gateway" "example" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public.id
   tags = {
-    Name = "PrivateSubnet"
+    Name = "example-nat"
   }
 }
 
-resource "aws_route_table" "public_route_table" {
-  vpc_id = aws_vpc.my_vpc.id
+
+# Create Route Table for public subnet
+resource "aws_route_table" "rt1" {
+  vpc_id = aws_vpc.example.id
+
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.my_igw.id
+    gateway_id = aws_internet_gateway.example.id
   }
-  tags = {
-    Name = "PublicRouteTable"
-  }
-}
-
-resource "aws_route_table_association" "public_subnet_association" {
-  subnet_id      = aws_subnet.public_subnet.id
-  route_table_id = aws_route_table.public_route_table.id
-}
-
-
-resource "aws_eip" "nat_eip" {
-  domain = "vpc"
-}
-
-
-
-resource "aws_nat_gateway" "my_nat_gateway" {
-  allocation_id = aws_eip.nat_eip.id
-  subnet_id     = aws_subnet.public_subnet.id
-  tags = {
-    Name = "MyNatGateway"
+    tags = {
+    Name = "public-route-table"
   }
 }
-
-resource "aws_route_table" "private_route_table" {
-  vpc_id = aws_vpc.my_vpc.id
+# Create Route Table for private subnet
+resource "aws_route_table" "rt2" {
+  vpc_id = aws_vpc.example.id
   route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.my_nat_gateway.id
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_nat_gateway.example.id
   }
-  tags = {
-    Name = "PrivateRouteTable"
-  }
-}
-
-
-resource "aws_route_table_association" "private_subnet_association" {
-  subnet_id      = aws_subnet.private_subnet.id
-  route_table_id = aws_route_table.private_route_table.id
-}
-
-
-resource "aws_instance" "private_instance" {
-  ami             = "ami-0277155c3f0ab2930"
-  instance_type   = "t2.micro"
-  key_name        = "new_key"
-  subnet_id       = aws_subnet.private_subnet.id
-  security_groups = [aws_security_group.allow_ssh.id]
-  tags = {
-    Name = "PrivateInstance"
+    tags = {
+    Name = "private-route-table"
   }
 }
-resource "aws_instance" "bastion_host" {
-  ami                         = "ami-0277155c3f0ab2930"
-  instance_type               = "t2.micro"
-  subnet_id                   = aws_subnet.public_subnet.id
-  key_name                    = "new_key"
-  associate_public_ip_address = true
-  tags = {
-    Name = "BastionHost"
-  }
-  security_groups = [aws_security_group.allow_ssh.id]
+
+# route table association with public subnet
+resource "aws_route_table_association" "as_1" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.rt1.id
 }
 
-resource "aws_security_group" "allow_ssh" {
-  name        = "allow-ssh"
-  description = "Allow inbound SSH traffic"
-  vpc_id      = aws_vpc.my_vpc.id
-
+# route table association with private subnet
+resource "aws_route_table_association" "as_2" {
+  subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.rt2.id
+}
+#create security group
+resource "aws_security_group" "name" {
+  name        = "allow_tls"
+  description = "Allow TLS inbound traffic and all outbound traffic"
+  vpc_id      = aws_vpc.example.id
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Allowing SSH traffic from anywhere
+    cidr_blocks = ["0.0.0.0/0"]
   }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+      tags = {
+    Name = "first-sg"
+  }
 }
 
-resource "null_resource" "example_provisioner" {
-  # This is the trigger to apply the provisioners when the resource changes
-  triggers = {
-    # Use a unique value here to force the provisioners to run every time
-    instance_id = aws_instance.private_instance.id
-  }
-  provisioner "remote-exec" {
-    # Connect to the existing instance using the IP or hostname
-    connection {
-      type        = "ssh"
-      user        = "ec2-user"
-      host        = aws_instance.bastion_host.public_ip
-      private_key = file("${path.module}/private_keys/new_key.pem")
-    }
+#create ec2 in public subnet
 
-    inline = [
-      "sudo yum update –y",
-      "sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo",
-      "sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key",
-      "sudo yum upgrade",
-      "sudo dnf install java-17-amazon-corretto -y",
-      "sudo yum install jenkins -y",
-      "sudo service jenkins enable",
-      "sudo service jenkins start",
-      "sudo service jenkins status",
-      "sudo cat /var/lib/jenkins/secrets/initialAdminPassword",
-    ]
+resource "aws_instance" "public_instance" {
+  ami             = "ami-0c20d88b0021158c6" # Change to your desired AMI ID
+  instance_type   = "t2.micro"
+  subnet_id       = aws_subnet.public.id
+  key_name        = "terraform2"
+  security_groups = [aws_security_group.name.id]
+  user_data = <<EOF
+#!/bin/bash
+sudo yum update -y
+sudo yum install httpd -y
+sudo systemctl enable httpd
+sudo systemctl start httpd
+sudo systemctl status httpd
+
+EOF
+
+  tags = {
+    Name = "public_instance"
   }
 }
